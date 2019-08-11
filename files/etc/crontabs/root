@@ -1,1 +1,2 @@
 */30 * * * * sh /etc/snort/rotatelogs >/dev/null 2>&1
+0 0 */4 * * sh /etc/snort/updaterules.sh >/dev/null 2>&1
