@@ -1,0 +1,75 @@
+# Uncommented rules/*.rules files below are included as DROPs within your snort.rules
+# updaterules.sh extracts them selectively from https://rules.emergingthreats.net/open/snort-edge/emerging.rules.tar.gz
+
+# Emerging Threats FAQ https://doc.emergingthreats.net/bin/view/Main/EmergingFAQ
+
+# BotCC: Detect hosts communicating with a known and active Bot or Malware command and control server.
+rules/emerging-botcc.portgrouped.rules
+rules/emerging-botcc.rules
+
+# CIArmy: Subset of CINS Active Threat Intelligence rules, where an IP's 'Rogue Packet' score is poor or it has tripped a number of trusted alerts around the world.
+rules/emerging-ciarmy.rules
+
+# Compromised: Hosts compromised by bots, phishing sites, or spewing hostile traffic. These are not your everyday infected and sending a bit of spam hosts, these are significantly infected and hostile hosts.
+rules/emerging-compromised.rules
+
+# Current Events 
+# Most often simple sigs for the Storm binary URL of the day, sigs to catch CLSIDs of newly found vulnerable apps where we don't have detail on the exploit.
+# Useful sigs but not for the long term until they have been properly tested.
+rules/emerging-current_events.rules
+
+# Don't Route or Peer (DROP): Daily updated list of the Spamhaus Don't Route or Peer list. Primarily known professional spammers. More info at http://www.spamhaus.org
+rules/emerging-drop.rules
+
+# Dshield: Daily updated list of the DShield top attackers list. Reliable. More info at http://www.dshield.org
+rules/emerging-dshield.rules
+
+# Exploits: Detect direct exploits including Windows exploits, Veritas, etc.
+rules/emerging-exploit.rules
+
+# Malware: Spyware and other things you don't want running on your network. URL hooks for known update schemes, User-Agent strings of known malware, and a load of other goodies.
+rules/emerging-malware.rules
+rules/emerging-mobile_malware.rules
+
+# Scan: Things to detect reconnaissance and probing. Nessus, Nikto, portscanning, etc. Early warning stuff.
+rules/emerging-scan.rules
+
+rules/emerging-trojan.rules
+rules/emerging-user_agents.rules
+
+# Web clients: Some SQL Injection, web server overflows, vulnerable web apps, that kind of thing. Very important if you're running web servers, and pretty reasonable load.
+rules/emerging-web_client.rules
+rules/emerging-worm.rules
+
+# Optionally uncomment others below, depending on what you're running on your network
+# Descriptions at https://doc.emergingthreats.net/bin/view/Main/EmergingFAQ#What_is_the_general_intent_of_ea
+# rules/emerging-activex.rules
+# rules/emerging-attack_response.rules
+# rules/emerging-chat.rules
+# rules/emerging-deleted.rules
+# rules/emerging-dns.rules
+# rules/emerging-dos.rules
+# rules/emerging-ftp.rules
+# rules/emerging-games.rules
+# rules/emerging-icmp.rules
+# rules/emerging-icmp_info.rules
+# rules/emerging-imap.rules
+# rules/emerging-inappropriate.rules
+# rules/emerging-info.rules
+# rules/emerging-misc.rules
+# rules/emerging-netbios.rules
+# rules/emerging-p2p.rules
+# rules/emerging-policy.rules
+# rules/emerging-pop3.rules
+# rules/emerging-rpc.rules
+# rules/emerging-scada.rules
+# rules/emerging-shellcode.rules
+# rules/emerging-smtp.rules
+# rules/emerging-snmp.rules
+# rules/emerging-sql.rules
+# rules/emerging-telnet.rules
+# rules/emerging-tftp.rules
+# rules/emerging-tor.rules
+# rules/emerging-voip.rules
+# rules/emerging-web_server.rules
+# rules/emerging-web_specific_apps.rules

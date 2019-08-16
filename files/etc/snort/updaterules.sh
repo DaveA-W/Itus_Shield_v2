@@ -1,21 +1,21 @@
 #!/bin/sh
 
-download ()
-{
+# Wrapper to handle downloads
+download () {
 	# try  
 	{
 		ruleset=$1
 		url=$2
-		timeout=$3
-		followRedirect=$4
+		followRedirect=$3
+		timeout=$4
 		
-		if [ -z "$timeout" ] ; then timeout=40 ; fi
+		if [ -z "$timeout" ] ; then timeout=120 ; fi
 		
 		echo " "
-		echo "Downloading $ruleset ..."
-		echo "$url"
+		echo "Downloading $ruleset"
+		echo "  $url"
 
-		if [ -n "$followRedirect" ]
+		if [ "$followRedirect" == "true" ]
 		then
 			curl -k -1 -m $timeout -o $ruleset -L $url		
 		else
@@ -23,141 +23,118 @@ download ()
 		fi
 	} || {		
 		echo "Unable to download rules '$1' from $2"
-		echo "ERROR	$1" >> counts.log
+		echo "*error*	 $1" >> counts.log
 		return 1
 	}
 }
 
-ingest ()
-{	
+# Ingests files conforming to a specified filespec, appending lines from each to alert.list
+ingest () {	
 	# try  
 	{
-		ruleset=$1
-		if [ -n "$2" ] ; then filenames=$2 ; else filenames=$ruleset; fi
-
-		# Extract rules to alert.tmp     
-		cat $filenames | sed '/^\#/d' | sed '/^$/d' > alert.tmp &&
-
-		# Output original count to counts.log (assumes it exists)
-		wc -l < alert.tmp | awk  '{print  $1,"\t", "'$ruleset'" }' >> counts.log  &&
-
-		return 0
+		for filename in $(ls $1)
+		do
+			# Extract rules to alert.tmp
+			cat $filename | sed '/^\#/d' | sed '/^$/d' > alert.tmp &&
+			# Append to alert.list
+			cat alert.tmp >> alert.list	&&
+			# Output count to counts.log
+			wc -l < alert.tmp | awk  '{print  $1,"\t", "'$filename'" }' >> counts.log
+		done
+		return 0		
 	} || {
 		echo "Unable to ingest rules '$1'"
-		echo "ERROR	$1" >> counts.log
+		echo "*error*	 $1" >> counts.log
 		return 1
 	}
 }
 
-downloadAndIngest ()
-{
+# Downloads and ingests rules from an url
+# (gzips will be unpacked, resultant $filenames spec should be provided as the last argument)
+downloadAndIngest() {
 	ruleset=$1
 	url=$2
-	timeout=$3
-	followRedirect=$4
+	followRedirect=$3
+	filenames=$4
 	if [ -n "$url" ]
 	then
-		if [[ "$url" == *.tar.gz ]]
-		then
-			download "$ruleset.tar.gz" "$url" $timeout $followRedirect  &&
-			tar x -z -f "$ruleset.tar.gz"  &&
-			ingest "$ruleset" "$ruleset/*.rules" && 
-			return 0
-		else
-			download "$ruleset" "$url" $timeout $followRedirect  &&
-			ingest   "$ruleset"  && 
-			return 0
+		if [ -z "$filenames" ] ; then
+			filenames=$ruleset
 		fi
+		download "$ruleset" "$url" $followRedirect &&
+		(
+			file "$ruleset" | grep -q gzip  &&
+			mv "$ruleset" "$ruleset.tar.gz" &&
+			tar -zxf "$ruleset.tar.gz"
+		) &&
+		ingest "$filenames" && 
+		return 0
 	fi
 	return 1
 }
 
-
-# Prepare /tmp/snort/
+# Prepare /tmp/snort/ and cumulative output files
+echo " "
+echo "Preparing working directory for rule download and ingestion"
+echo "/tmp/snort"
 if [ ! -d "/tmp/snort" ] ; then	mkdir /tmp/snort ; else	rm -rf /tmp/snort/* ; fi
 cd /tmp/snort
-echo " "
-echo "/tmp/snort is the working director for rule download and ingestion"
+touch alert.list
+touch ip.list
 
 # Prepare counts.log
-echo "# Rules  Downloaded set, via etc/snort/updaterules"                   > counts.log
-echo "-------- -----------------------------------------"                  >> counts.log
+echo "# Rules  Set processed by etc/snort/updaterules.sh"  > counts.log
+echo "-------- -----------------------------------------" >> counts.log
 
-# NOTE: Snort Community Rules ~1.7MB location uses a 302 redirect to Amazon S3 bucket
-downloadAndIngest community-rules                  https://www.snort.org/downloads/community/community-rules.tar.gz  120  true
-
-# Emerging Threats lists can be found at https://rules.emergingthreats.net/open/snort-edge/rules/
-
-# BotCC: Detect hosts communicating with a known and active Bot or Malware command and control server.
-downloadAndIngest emerging-botcc.rules             https://rules.emergingthreats.net/open/snort-edge/rules/emerging-botcc.rules
-downloadAndIngest emerging-botcc.portgrouped.rules https://rules.emergingthreats.net/open/snort-edge/rules/emerging-botcc.portgrouped.rules
-
-# CIArmy: Subset of CINS Active Threat Intelligence rules, where an IP's 'Rogue Packet' score is poor or it has tripped a number of trusted alerts around the world.
-downloadAndIngest emerging-ciarmy.rules            https://rules.emergingthreats.net/open/snort-edge/rules/emerging-ciarmy.rules
-
-# Compromised: Hosts compromised by bots, phishing sites, or spewing hostile traffic. These are not your everyday infected and sending a bit of spam hosts, these are significantly infected and hostile hosts.
-downloadAndIngest emerging-compromised.rules       https://rules.emergingthreats.net/open/snort-edge/rules/emerging-compromised.rules
-
-# Dshield: Daily list of the top attackers reported to www.dshield.org
-downloadAndIngest emerging-dshield.rules           https://rules.emergingthreats.net/open/snort-edge/rules/emerging-dshield.rules
-
-# Exploits: Detect direct exploits including Windows exploits, Veritas, etc.
-downloadAndIngest emerging-exploit.rules           https://rules.emergingthreats.net/open/snort-edge/rules/emerging-exploit.rules
-
-# Malware: Spyware and other things you don't want running on your network. URL hooks for known update schemes, User-Agent strings of known malware, and a load of other goodies.
-downloadAndIngest emerging-malware.rules           https://rules.emergingthreats.net/open/snort-edge/rules/emerging-malware.rules
-
-# Mobile Malware
-downloadAndIngest emerging-mobile_malware.rules    https://rules.emergingthreats.net/open/snort-edge/rules/emerging-mobile_malware.rules
-
-# User Agents
-downloadAndIngest emerging-user_agents.rules       https://rules.emergingthreats.net/open/snort-edge/rules/emerging-user_agents.rules
-
-# Web Clients
-downloadAndIngest emerging-web_client.rules        https://rules.emergingthreats.net/open/snort-edge/rules/emerging-web_client.rules
-
-# Worms
-downloadAndIngest emerging-worm.rules              https://rules.emergingthreats.net/open/snort-edge/rules/emerging-worm.rules
-
-# Current Events 
-# Most often simple sigs for the Storm binary URL of the day, sigs to catch CLSIDs of newly found vulnerable apps where we don't have detail on the exploit.
-# Useful sigs but not for the long term until they have been properly tested.
-# (file size is ~1.5MB - increase timeout to 120 seconds)
-downloadAndIngest emerging-current_events.rules    https://rules.emergingthreats.net/open/snort-edge/rules/emerging-current_events.rules  120
-
-# Trojans (file size is ~4MB - increase timeout to 120 seconds)
-downloadAndIngest emerging-trojan.rules            https://rules.emergingthreats.net/open/snort-edge/rules/emerging-trojan.rules  120
-
-# Spamhaus Drops: Rules to block networks listed as DROP by www.spamhaus.org
-downloadAndIngest emerging-drop.rules              https://rules.emergingthreats.net/open/snort-edge/rules/emerging-drop.rules
-
-# Web Specific Apps			** commented out in fw_upgrade? **
-# downloadAndIngest emerging-web_specific_apps.rules https://rules.emergingthreats.net/open/snort-edge/rules/emerging-web_specific_apps.rules
-
-# Scans
-downloadAndIngest emerging-scan.rules              https://rules.emergingthreats.net/open/snort-edge/rules/emerging-scan.rules
+# NOTE: Snort Community Rules ~1.7MB (`true` below flags that 302 redirects should be followed -> actual file is in an Amazon S3 bucket)
+downloadAndIngest community-rules    https://www.snort.org/downloads/community/community-rules.tar.gz  true  community-rules/*.rules
 
 # SSL Blacklist: Bad SSL certificates identified by abuse.ch to be associated with malware or botnet activities in the past 30 days.
-downloadAndIngest abuse-sslbl.rules                https://sslbl.abuse.ch/blacklist/sslipblacklist.rules
+downloadAndIngest abuse-sslbl.rules  https://sslbl.abuse.ch/blacklist/sslipblacklist.rules
 
 # SSL Aggressive: Bad SSL certificates *ever* identified by abuse.ch to be associated with malware or botnet activities.
 # Since IP addresses can change, may contain false positives - comment out by default
-# downloadAndIngest abuse-dyre.rules               https://sslbl.abuse.ch/blacklist/dyre_sslipblacklist_aggressive.rules
+# downloadAndIngest abuse-dyre.rules https://sslbl.abuse.ch/blacklist/dyre_sslipblacklist_aggressive.rules
 
-# ZeuS: Command and control servers ** DISCONTINUED 2019-07-08 per https://zeustracker.abuse.ch/byebye.php?download=snort **
-# downloadAndIngest /tmp/snort/zeus.rules          https://zeustracker.abuse.ch/blocklist.php?download=snort
+# ZeuS servers: DISCONTINUED 2019-07 https://zeustracker.abuse.ch/byebye.php?download=snort
+# downloadAndIngest zeus.rules       https://zeustracker.abuse.ch/blocklist.php?download=snort
+
+# Emerging Threats zip ~2.3MB        https://doc.emergingthreats.net/bin/view/Main/EmergingFAQ
+download emerging-threats.tar.gz     https://rules.emergingthreats.net/open/snort-edge/emerging.rules.tar.gz  &&
+(
+	# Extract emerging-threats.tar.gz, assumed it will unzip to folder "rules"
+	echo " "
+
+	# Look for pre-defined subset of rules to extract
+	if [ -f "/etc/snort/updaterules.emerging-threats.txt" ]; then
+		echo "Extracting subset listed in /etc/snort/updaterules.emerging-threats.txt"
+		# Expect errors due to commented lines, so send error output to null
+		tar -zxvf "emerging-threats.tar.gz" -T "/etc/snort/updaterules.emerging-threats.txt" 2>/dev/null
+		# Also extract IP blacklist and sid-msg.map for later use
+		tar -zxvf "emerging-threats.tar.gz" "rules/compromised-ips.txt" "rules/sid-msg.map"
+
+	else # unzip the lot
+		echo "Extracting:"
+		tar -zxvf "emerging-threats.tar.gz"
+	fi
+
+	# Now ingest *.rules
+	ingest "rules/*.rules"
+)
 
 echo " "
-echo "Converting alerts to drops"
-cat *.rules > alert.list
+echo "Changing rules that only alert to drop instead"
 sed -i 's/alert /drop /' alert.list
+# wc -l alert.list
 sed '/^\#/d' alert.list >> drop.list
+# wc -l drop.list
 sed '/^$/d' drop.list | sort | uniq > drop.sorted
+# wc -l drop.sorted
 
 # Snort only allows one sid number, so we have to delete where rules contain multiple revisions
 echo "Removing rules with extra sid revision numbers"
 cat drop.sorted | awk -F"sid:" '{print $2}' | awk -F";" '{print $1}' | sort | uniq -d > duplicate.sids
-> duplicate.sed
+touch duplicate.sed
 for i in $(cat duplicate.sids)
 do
 	echo "0,/$i/{/$i/d}" >> duplicate.sed
@@ -169,40 +146,88 @@ cat drop.tmp | awk -F";)" '{print $2 $1}' | sort > drop.sorted
 sed -i 's/$/;\)/' drop.sorted
 
 # Removing rules determined by ITUS Networks to cause web site issues
-if [ -f "/etc/snort/rules/exclude.rules" ]; then
-	# Searching and removing ~100 rules takes a couple of minutes
-	# (note: as of August 2019 though, none seem to be present in default sets above)
-	echo "Removing rules determined by ITUS Networks to cause web site issues ..."
-	for i in $(cat /etc/snort/rules/exclude.rules)
+# Searching and removing ~100 rules takes a couple of minutes
+# (note: as of August 2019 though, none seem to be present in default sets above)
+if [ -f "/etc/snort/updaterules.exclude.sids.txt" ]; then
+	echo "-------- -----------------------------------------" >> counts.log
+	wc -l < drop.sorted  | awk '{print  $1,"\t", "'unique.rules'" }' >> counts.log
+	original=$(wc -l drop.sorted | awk '{print $1}')
+	total=$(wc -l /etc/snort/updaterules.exclude.sids.txt | awk '{print $1}')
+	pattern=0
+	for sid in $(cat /etc/snort/updaterules.exclude.sids.txt)
 	do
-		if [ "$i" -eq "$i" ] 2>/dev/null
-		then
-			# it's an integer sid
-			sed -i "/sid:$i/s/^/#/" drop.sorted		
+		if [ "$sid" -eq "$sid" ] 2>/dev/null
+		then # it's an integer sid
+			printf "\rRemoving rules that can cause web site issues: checking sid %3d of %s" "$((++pattern))" "$total";
+			sed -i "/sid:$sid/s/^/#/" drop.sorted
 		fi
 	done
+	echo " "
+	final=$(wc -l drop.sorted | awk '{print $1}')
+	if [ "$final" -eq "$original" ] 2>/dev/null
+	then
+		echo "No rules removed - consider clearing old sids from /etc/snort/updaterules.exclude.sids.txt"
+	else
+		removed=$((final-original))
+		echo "$removed rules removed"
+	fi
 fi
 
 echo "Removing blank lines"
+sed -i 's/\r//g' drop.sorted # carriage return characters
 awk 'NF' drop.sorted > snort.rules
-sed -i 's/\r//g' snort.rules # carriage return characters
-echo " "
 
-# Log total snort.rules and output
-echo "Displaying counts.log"
+# Cleanup working files
+echo "Cleaning up working files"
+rm -f ip.list alert.* duplicate.* drop.*
+
+# Update IP blacklists ---------------------------------
+echo " "
+echo "Updating IP blacklists"
+echo "-------- -----------------------------------------" >> counts.log
+
+# rules/compromised-ips.txt comes from emerging-threats.tar.gz downloaded above
+if [ -f "rules/compromised-ips.txt" ]; then
+	cat rules/compromised-ips.txt >> ip.list
+	wc -l < rules/compromised-ips.txt  | awk '{print  $1,"\t", "'rules/compromised-ips.txt'" }' >> counts.log
+fi
+
+# Snort Community blacklist url found via https://blog.snort.org/2015/09/ip-blacklist-feed-has-moved-locations.html
+# Note other potentially useful urls within https://github.com/shirkdog/pulledpork/blob/master/etc/pulledpork.conf
+download talos-ip-blacklist.txt https://talosintelligence.com/documents/ip-blacklist true  # follow url 302 redirects
+if [ -f "talos-ip-blacklist.txt" ]; then
+	cat talos-ip-blacklist.txt >> ip.list
+	wc -l < talos-ip-blacklist.txt  | awk '{print  $1,"\t", "'talos-ip-blacklist.txt'" }' >> counts.log
+fi
+
+# Output unique IPs from our downloaded blacklist(s) to L2.blacklist
+awk '!seen[$0]++' ip.list > L2.blacklist
+
+# Update counts.log with final results
 echo "-------- -----------------------------------------"       >> counts.log
-wc -l < snort.rules | awk  '{print  $1,"\t", "'snort.rules'" }' >> counts.log
+wc -l < snort.rules  | awk '{print  $1,"\t", "'snort.rules'" }' >> counts.log
+wc -l < L2.blacklist | awk '{print  $1,"\t", "'L2.blacklist'"}' >> counts.log
 echo \ >> counts.log
+echo " "
+echo "Displaying counts.log"
 echo " "
 cat counts.log
 
-# Cleanup temp files
-rm -f alert.* duplicate.* drop.*
-
-echo "Replacing /etc/snort/rules/snort.rules"
-mv /etc/snort/rules/snort.rules /etc/snort/rules/snort.rules.bak
-mv snort.rules /etc/snort/rules/snort.rules
-sleep 1
+# Replace snort files and restart ----------------------
+if [ -s "snort.rules" ]; then
+	echo "Replacing /etc/snort/rules/snort.rules"
+	mv /etc/snort/rules/snort.rules /etc/snort/rules/snort.rules.bak
+	mv snort.rules /etc/snort/rules/snort.rules
+else
+	echo "No snort rules downloaded"
+fi
+if [ -s "L2.blacklist" ]; then
+	echo "Replacing /etc/snort/rules/iplists/L2.blacklist"
+	mv /etc/snort/rules/iplists/L2.blacklist /etc/snort/rules/iplists/L2.blacklist.bak
+	mv L2.blacklist /etc/snort/rules/iplists/L2.blacklist
+else
+	echo "No IP blacklists downloaded"
+fi
 
 echo "Restarting SNORT service"
 # service snort restart

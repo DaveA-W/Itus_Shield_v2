@@ -1,4 +1,5 @@
-# sid numbers of rules determined by ITUS Networks to cause issues with common web sites
+# sid numbers of rules to exclude from final snort.rules
+# (determined by ITUS Networks or others to cause issues with common web sites)
 2002802
 2019237
 2018194
