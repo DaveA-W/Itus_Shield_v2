@@ -37,17 +37,20 @@ local fs = require "nixio.fs"
 local sys = require "luci.sys"
 require "ubus"
 
-m = Map("snort", translate("Intrusion Prevention"), translate("Changes may take up to 90 seconds to take effect, service may be interrupted during that time. The IPS engine will restart each time you click the Save & Apply or On/Off button."))
+m = Map("snort", translate("Intrusion Prevention"), translate("<p>Changes may take a couple of minutes to take effect, service may be interrupted during that time.  Where you have edited rules, the system will need to download and re-process the new rulesets and any exclusions specified.</p><p>The IPS engine will restart each time you click the Save & Apply or On/Off button.</p><p><b>DO NOT REFRESH</b> if you see a <b>Bad Gateway</b> timeout message presented, since that may re-process your changes again.  Instead, place the cursor in your address bar and press Enter to re-navigate back to this page.</p>"))
 
 m.on_init = function()
-
-    -- Get the Shield Mode
+--[[
+   -- Get the Shield Mode
    io.input("/var/.mode")
    line = io.read("*line")
    if line == "Router" then
-      luci.sys.call("sed '1!G;h$!d' /var/log/snort/alert.log > /tmp/snort/alert2.log")
+   luci.sys.call("cp /var/log/snort/alert.fast /var/log/snort/alert.log")
+   luci.sys.call("sed '1!G;h$!d' /var/log/snort/alert.log > /var/log/snort/snort_luci.log")
+   luci.sys.call("rm /var/log/snort/alert.log")
    end
-   luci.sys.call("grep -i 'priority: 1' /var/log/snort/alert2.log > /var/log/snort/priority1.log")
+   luci.sys.call("grep -i 'priority: 1' /var/log/snort/snort_luci.log > /var/log/snort/priority1.log")
+--]]
 end
 
 m.reset = false
@@ -58,65 +61,59 @@ s.anonymous = true
 s.addremove = false
 
 s:tab("tab_basic", translate("Basic Settings"))
--- Get the Shield Mode
-io.input("/var/.mode")
-line = io.read("*line")
-if line == "Router" then
-   s:tab("tab_wan", translate("WAN Config"))
-   s:tab("tab_lan", translate("LAN Config"))
-else
-   s:tab("tab_config", translate("Config"))
-end
-
+s:tab("tab_advanced", translate("Advanced Settings"))
+s:tab("tab_engine", translate("Engine"))
+s:tab("tab_preprocessors", translate("Preprocessors"))
+s:tab("tab_other", translate("Other Settings"))
+s:tab("tab_priority", translate("IPS Priority 1 Log"))
+s:tab("tab_logs", translate("IPS Logs"))
 s:tab("tab_threshold", translate("Threshold Config"))
+s:tab("tab_emerging_threats", translate("Emerging Threats"))
 s:tab("tab_custom", translate("Custom Rules"))
 s:tab("tab_rules", translate("Exclude Rules"))
-s:tab("tab_logs", translate("IPS Logs"))
-s:tab("tab_priority", translate("IPS Priority 1 log"))
 s:tab("tab_counter", translate("Rule Counter"))
 --s:tab("tab_snort1", translate("Snort Rules Selector"))
 
+	--------------------- Basic Tab ------------------------
+	local status="not running"
+	require "ubus"
+	local conn = ubus.connect()
+	if not conn then
+   		error("Failed to connect to ubusd")
+	end
 
---------------------- Basic Tab ------------------------
-local status="not running"
-require "ubus"
-local conn = ubus.connect()
-if not conn then
-   error("Failed to connect to ubusd")
-end
+	for k, v in pairs(conn:call("service", "list", { name="snort" })) do
+   		status="running"
+	end
 
-for k, v in pairs(conn:call("service", "list", { name="snort" })) do
-   status="running"
-end
+	button_start = s:taboption("tab_basic",Button, "start", translate("Status: "))
+  	if status == "running" then
+  		 button_start.inputtitle = "ON"
+  	else
+   		button_start.inputtitle = "OFF"
+  	end
 
-button_start = s:taboption("tab_basic",Button, "start", translate("Status: "))
-  if status == "running" then
-   button_start.inputtitle = "ON"
-  else
-   button_start.inputtitle = "OFF"
+  	button_start.write = function(self, section)
+   		if status == "not running" then
+      			sys.call("service snort start")
+      			button_start.inputtitle = "ON"
+      			button_start.title = "Status: "
+   		else
+      			sys.call("service snort stop")
+      			button_start.inputtitle = "OFF"
+      			button_start.title = "Status: "
+   		end
+	end
+
+  	if status == "running" then
+   		button_restart = s:taboption("tab_basic", Button, "restart", translate("Restart: "))
+   		button_restart.inputtitle = "Restart"
+   		button_restart.write = function(self, section)
+      		sys.call("service snort restart")   
+   	end
   end
 
-  button_start.write = function(self, section)
-   if status == "not running" then
-      sys.call("service snort start")
-      button_start.inputtitle = "ON"
-      button_start.title = "Status: "
-   else
-      sys.call("service snort stop")
-      button_start.inputtitle = "OFF"
-      button_start.title = "Status: "
-   end
-  end
-
-  if status == "running" then
-   button_restart = s:taboption("tab_basic", Button, "restart", translate("Restart: "))
-   button_restart.inputtitle = "Restart"
-   button_restart.write = function(self, section)
-      sys.call("service snort restart")   
-   end
-  end
-
-  io.input("/var/.mode")
+--[[  io.input("/var/.mode")
   line = io.read("*line")
   if line == "Router" then
    --------------------- Snort Instance WAN Tab -----------------------
@@ -197,15 +194,125 @@ button_start = s:taboption("tab_basic",Button, "start", translate("Status: "))
       end
    end
 end
+--]]
+
+	--------------------- Advanced Tab -----------------------
+
+        config_file1 = s:taboption("tab_advanced", TextValue, "text1", "")
+        config_file1.wrap = "off"
+        config_file1.rows = 25
+        config_file1.rmempty = false
+
+        function config_file1.cfgvalue()
+                local uci = require "luci.model.uci".cursor_state()
+                file = "/etc/snort/profile/config1_advanced.conf"
+                if file then
+                        return fs.readfile(file) or ""
+                else
+                        return ""
+                end
+        end
+
+        function config_file1.write(self, section, value)
+                if value then
+                        local uci = require "luci.model.uci".cursor_state()
+                        file = "/etc/snort/profile/config1_advanced.conf"
+                        fs.writefile(file, value:gsub("\r\n", "\n"))
+                        luci.sys.call("/etc/init.d/snort restart")
+--                      luci.sys.call("/etc/init.d/suricata restart")
+                end
+        end
+
+
+        ---------------------- Engine Tab ------------------------
+
+        config_file2 = s:taboption("tab_engine", TextValue, "text2", "")
+        config_file2.wrap = "off"
+        config_file2.rows = 25
+        config_file2.rmempty = false
+
+        function config_file2.cfgvalue()
+                local uci = require "luci.model.uci".cursor_state()
+                file = "/etc/snort/profile/config2_engine.conf"
+                if file then
+                        return fs.readfile(file) or ""
+                else
+                        return ""
+                end
+        end
+
+        function config_file2.write(self, section, value)
+                if value then
+                        local uci = require "luci.model.uci".cursor_state()
+                        file = "/etc/snort/profile/config2_engine.conf"
+                        fs.writefile(file, value:gsub("\r\n", "\n"))
+                        luci.sys.call("/etc/init.d/snort restart")
+--                      luci.sys.call("/etc/init.d/suricata restart")
+                end
+        end
+
+        ------------------- Preprocessors Tab ---------------------
+
+        config_file3 = s:taboption("tab_preprocessors", TextValue, "text3", "")
+        config_file3.wrap = "off"
+        config_file3.rows = 25
+        config_file3.rmempty = false
+
+        function config_file3.cfgvalue()
+                local uci = require "luci.model.uci".cursor_state()
+                file = "/etc/snort/profile/config3_preprocessors.conf"
+                if file then
+                        return fs.readfile(file) or ""
+                else
+                        return ""
+                end
+        end
+
+        function config_file3.write(self, section, value)
+                if value then
+                        local uci = require "luci.model.uci".cursor_state()
+                        file = "/etc/snort/profile/config3_preprocessors.conf"
+                        fs.writefile(file, value:gsub("\r\n", "\n"))
+                        luci.sys.call("/etc/init.d/snort restart")
+--                      luci.sys.call("/etc/init.d/suricata restart")
+                end
+        end
+
+        --------------------- Other Tab ------------------------
+
+        config_file4 = s:taboption("tab_other", TextValue, "text4", "")
+        config_file4.wrap = "off"
+        config_file4.rows = 25
+        config_file4.rmempty = false
+
+        function config_file4.cfgvalue()
+                local uci = require "luci.model.uci".cursor_state()
+                file = "/etc/snort/profile/config4_other.conf"
+                if file then
+                        return fs.readfile(file) or ""
+                else
+                        return ""
+                end
+        end
+
+        function config_file4.write(self, section, value)
+                if value then
+                        local uci = require "luci.model.uci".cursor_state()
+                        file = "/etc/snort/profile/config4_other.conf"
+                        fs.writefile(file, value:gsub("\r\n", "\n"))
+                        luci.sys.call("/etc/init.d/snort restart")
+--                      luci.sys.call("/etc/init.d/suricata restart")
+                end
+        end
 
 	---------------------- Threshold Config Tab ------------------------
 
-	config_file2 = s:taboption("tab_threshold", TextValue, "threshold", "")
-	config_file2.wrap = "off"
-	config_file2.rows = 25
-	config_file2.rmempty = false
+	config_file5 = s:taboption("tab_threshold", TextValue, "threshold", "")
+	config_file5.wrap = "off"
+	config_file5.rows = 25
+	config_file5.rmempty = false
 
-	function config_file2.cfgvalue()
+	function config_file5.cfgvalue()
 		local uci = require "luci.model.uci".cursor_state()
 		file = "/etc/snort/threshold.conf"
 		if file then
@@ -215,7 +322,7 @@ end
 		end
 	end
 
-	function config_file2.write(self, section, value)
+	function config_file5.write(self, section, value)
 		if value then
 			local uci = require "luci.model.uci".cursor_state()
 			file = "/etc/snort/threshold.conf"
@@ -224,14 +331,39 @@ end
 		end
 	end
 
+	---------------------- Emerging Threats Tab ------------------------
+	config_file6 = s:taboption("tab_emerging_threats", TextValue, "emergingThreats", translate("Uncomment rules from <a href='https://doc.emergingthreats.net/bin/view/Main/EmergingFAQ' target='_blank'>Emerging Threats</a> that you want included as DROPs within your snort.rules"))
+	config_file6.wrap = "off"
+	config_file6.rows = 25
+	config_file6.rmempty = false
+
+	function config_file6.cfgvalue()
+		local uci = require "luci.model.uci".cursor_state()
+		file = "/etc/snort/rules/emerging-threats.rules"
+		if file then
+			return fs.readfile(file) or ""
+		else
+			return ""
+		end
+	end
+
+	function config_file6.write(self, section, value)
+		if value then
+			local uci = require "luci.model.uci".cursor_state()
+			file = "/etc/snort/rules/emerging-threats.rules"
+			fs.writefile(file, value:gsub("\r\n", "\n"))
+			luci.sys.call("/etc/snort/updaterules.sh")
+		end
+	end
+
 	---------------------- Custom Rules Tab ------------------------
 
-	config_file2 = s:taboption("tab_custom", TextValue, "text3", "")
-	config_file2.wrap = "off"
-	config_file2.rows = 25
-	config_file2.rmempty = false
+	config_file7 = s:taboption("tab_custom", TextValue, "customRules", "")
+	config_file7.wrap = "off"
+	config_file7.rows = 25
+	config_file7.rmempty = false
 
-	function config_file2.cfgvalue()
+	function config_file7.cfgvalue()
 		local uci = require "luci.model.uci".cursor_state()
 		file = "/etc/snort/rules/local.rules"
 		if file then
@@ -241,7 +373,7 @@ end
 		end
 	end
 
-	function config_file2.write(self, section, value)
+	function config_file7.write(self, section, value)
 		if value then
 			local uci = require "luci.model.uci".cursor_state()
 			file = "/etc/snort/rules/local.rules"
@@ -252,12 +384,12 @@ end
 
 	--------------------- Exclude Rules Tab ------------------------
 
-	config_file5 = s:taboption("tab_rules", TextValue, "text4", "")
-	config_file5.wrap = "off"
-	config_file5.rows = 25
-	config_file5.rmempty = false
+	config_file8 = s:taboption("tab_rules", TextValue, "excludeRules", translate("<p>Some rules can cause issues with certain apps or websites</p><p>You can exclude these rules if you identify their <abbr title=\"Snort Intrusion Detection\">sid</abbr> numbers</p><p><a href='https://snort.org/documents#OfficialDocumentation' target='_blank'>Read more</a></p>"))
+   config_file8.wrap = "off"
+	config_file8.rows = 25
+	config_file8.rmempty = false
 
-	function config_file5.cfgvalue()
+	function config_file8.cfgvalue()
 		local uci = require "luci.model.uci".cursor_state()
 		file = "/etc/snort/rules/exclude.rules"
 		if file then
@@ -267,16 +399,16 @@ end
 	end
 end
 
-function config_file5.write(self, section, value)
+	function config_file8.write(self, section, value)
 	if value then
 		local uci = require "luci.model.uci".cursor_state()
 		file = "/etc/snort/rules/exclude.rules"
 		fs.writefile(file, value:gsub("\r\n", "\n"))
-		luci.sys.call("/etc/init.d/snort restart")
+      luci.sys.call("/etc/snort/updaterules.sh")
 	end
 end
 
-		--------------------- Logs Tab ------------------------
+	--------------------- Logs Tab ------------------------
 
 	snort_logfile = s:taboption("tab_logs", TextValue, "logfile", "")
 	snort_logfile.wrap = "off"
@@ -285,46 +417,46 @@ end
 
 	function snort_logfile.cfgvalue()
 		local uci = require "luci.model.uci".cursor_state()
-		local file = "/tmp/snort/alert2"
+		local file = "/var/log/snort/snort_luci.log"
 		if file then
-		return fs.readfile(file) or ""
+			return fs.readfile(file) or ""
 		else
-		return ""
+			return ""
 		end
-	end
-
-	---------------------Priority Tab ------------------------
-snort_logfile1 = s:taboption("tab_priority", TextValue, "IPS priority 1 log", "")
-snort_logfile1.wrap = "off"
-snort_logfile1.rows = 25
-snort_logfile1.rmempty = false
-
-function snort_logfile1.cfgvalue()
-			local uci = require "luci.model.uci".cursor_state()
-			local file = "/tmp/snort/priority1"
-				if file then
-								return fs.readfile(file) or ""
-				else
-								return ""
-				end
 end
 
-	--------------------- counter Tab ------------------------
+	---------------------Priority Tab ------------------------
+	snort_logfile1 = s:taboption("tab_priority", TextValue, "IPS Priority 1 Log", "")
+	snort_logfile1.wrap = "off"
+	snort_logfile1.rows = 25
+	snort_logfile1.rmempty = false
 
-	counter = s:taboption("tab_counter", TextValue, "Counter", "")
-	counter.wrap = "off"
-	counter.rows = 25
-	counter.rmempty = false
-
-	function counter.cfgvalue()
-				local uci = require "luci.model.uci".cursor_state()
-				local file = "/tmp/rule_counter.log"
-					if file then
-									return fs.readfile(file) or ""
-					else
-									return ""
-					end
+	function snort_logfile1.cfgvalue()
+		local uci = require "luci.model.uci".cursor_state()
+		local file = "/etc/snort/logs/priority1.log"
+	if file then
+		return fs.readfile(file) or ""
+	else
+		return ""
 	end
+end
+
+	--------------------- Rule Counter Tab ------------------------
+
+counter = s:taboption("tab_counter", TextValue, "Counter", "")
+counter.wrap = "off"
+counter.rows = 25
+counter.rmempty = false
+
+function counter.cfgvalue()
+	local uci = require "luci.model.uci".cursor_state()
+	local file = "/var/log/snort/rule_counter.log"
+	if file then
+		return fs.readfile(file) or ""
+	else
+		return ""
+	end
+end
 
 	--------------------- snort rule selector Tab ------------------------
 
