@@ -5,3 +5,28 @@ echo $gpio > /sys/class/gpio/export
 echo out > /sys/class/gpio/gpio$gpio/direction
 echo 0 > /sys/class/gpio/gpio$gpio/value
 echo $gpio > /sys/class/gpio/unexport
+
+ethtool -K eth0 gro off
+ethtool -K eth0 gso off
+ethtool -K eth0 tx-nocache-copy off
+ifconfig eth0 up
+sleep 1
+ethtool -s eth0 autoneg off
+sleep 1
+ethtool -s eth0 autoneg on
+sleep 1
+
+ethtool -K eth1 gro off
+ethtool -K eth1 gso off
+ethtool -K eth1 tx-nocache-copy off
+ifconfig eth1 up
+sleep 1
+ethtool -s eth1 autoneg off
+sleep 1
+ethtool -s eth1 autoneg on
+sleep 1
+
+ethtool -K eth2 gro off
+ethtool -K eth2 gso off
+ethtool -K eth2 tx-nocache-copy off
+ifconfig eth2 up 
