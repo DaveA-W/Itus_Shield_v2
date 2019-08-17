@@ -4,10 +4,10 @@
 download () {
 	# try  
 	{
-		ruleset=$1
-		url=$2
-		followRedirect=$3
-		timeout=$4
+		local ruleset=$1
+		local url=$2
+		local followRedirect=$3
+		local timeout=$4
 		
 		if [ -z "$timeout" ] ; then timeout=120 ; fi
 		
@@ -23,7 +23,7 @@ download () {
 		fi
 	} || {		
 		echo "Unable to download rules '$1' from $2"
-		echo "*error*	 $1" >> counts.log
+		echo "*error*	 $1" >> rule_counter.log
 		return 1
 	}
 }
@@ -38,13 +38,14 @@ ingest () {
 			cat $filename | sed '/^\#/d' | sed '/^$/d' > alert.tmp &&
 			# Append to alert.list
 			cat alert.tmp >> alert.list	&&
-			# Output count to counts.log
-			wc -l < alert.tmp | awk  '{print  $1,"\t", "'$filename'" }' >> counts.log
+			# Output count to rule_counter.log
+			local count=$(wc -l alert.tmp | awk '{print $1}')
+			printf "%7d\t%s\n" $count "$filename" >> rule_counter.log
 		done
 		return 0		
 	} || {
 		echo "Unable to ingest rules '$1'"
-		echo "*error*	 $1" >> counts.log
+		echo "*error*	 $1" >> rule_counter.log
 		return 1
 	}
 }
@@ -52,10 +53,10 @@ ingest () {
 # Downloads and ingests rules from an url
 # (gzips will be unpacked, resultant $filenames spec should be provided as the last argument)
 downloadAndIngest() {
-	ruleset=$1
-	url=$2
-	followRedirect=$3
-	filenames=$4
+	local ruleset=$1
+	local url=$2
+	local followRedirect=$3
+	local filenames=$4
 	if [ -n "$url" ]
 	then
 		if [ -z "$filenames" ] ; then
@@ -63,9 +64,10 @@ downloadAndIngest() {
 		fi
 		download "$ruleset" "$url" $followRedirect &&
 		(
-			file "$ruleset" | grep -q gzip  &&
-			mv "$ruleset" "$ruleset.tar.gz" &&
-			tar -zxf "$ruleset.tar.gz"
+			(file "$ruleset" | grep -q gzip  &&
+			 mv "$ruleset" "$ruleset.tar.gz" &&
+			 tar -zxf "$ruleset.tar.gz") ||
+			touch "$ruleset" # null op - no unzip required
 		) &&
 		ingest "$filenames" && 
 		return 0
@@ -82,9 +84,9 @@ cd /tmp/snort
 touch alert.list
 touch ip.list
 
-# Prepare counts.log
-echo "# Rules  Set processed by etc/snort/updaterules.sh"  > counts.log
-echo "-------- -----------------------------------------" >> counts.log
+# Prepare rule_counter.log
+echo "# Rules  Set processed by etc/snort/updaterules.sh"  > rule_counter.log
+echo "-------- -----------------------------------------" >> rule_counter.log
 
 # NOTE: Snort Community Rules ~1.7MB (`true` below flags that 302 redirects should be followed -> actual file is in an Amazon S3 bucket)
 downloadAndIngest community-rules    https://www.snort.org/downloads/community/community-rules.tar.gz  true  community-rules/*.rules
@@ -106,10 +108,10 @@ download emerging-threats.tar.gz     https://rules.emergingthreats.net/open/snor
 	echo " "
 
 	# Look for pre-defined subset of rules to extract
-	if [ -f "/etc/snort/updaterules.emerging-threats.txt" ]; then
-		echo "Extracting subset listed in /etc/snort/updaterules.emerging-threats.txt"
+	if [ -f "/etc/snort/rules/emerging-threats.rules" ]; then
+		echo "Extracting subset listed in /etc/snort/rules/emerging-threats.rules"
 		# Expect errors due to commented lines, so send error output to null
-		tar -zxvf "emerging-threats.tar.gz" -T "/etc/snort/updaterules.emerging-threats.txt" 2>/dev/null
+		tar -zxvf "emerging-threats.tar.gz" -T "/etc/snort/rules/emerging-threats.rules" 2>/dev/null
 		# Also extract IP blacklist and sid-msg.map for later use
 		tar -zxvf "emerging-threats.tar.gz" "rules/compromised-ips.txt" "rules/sid-msg.map"
 
@@ -145,37 +147,38 @@ sed -i 's/^/sid:/' drop.tmp
 cat drop.tmp | awk -F";)" '{print $2 $1}' | sort > drop.sorted
 sed -i 's/$/;\)/' drop.sorted
 
-# Removing rules determined by ITUS Networks to cause web site issues
+# Exclude rules determined by ITUS Networks to cause web site issues
 # Searching and removing ~100 rules takes a couple of minutes
 # (note: as of August 2019 though, none seem to be present in default sets above)
-if [ -f "/etc/snort/updaterules.exclude.sids.txt" ]; then
-	echo "-------- -----------------------------------------" >> counts.log
-	wc -l < drop.sorted  | awk '{print  $1,"\t", "'unique.rules'" }' >> counts.log
+if [ -f "/etc/snort/rules/exclude.rules" ]; then
+	echo "-------- -----------------------------------------" >> rule_counter.log
+	count=$(wc -l drop.sorted | awk '{print $1}')
+	printf "%7d\t%s\n" $count "unique rules before applying exclude.rules" >> rule_counter.log
 	original=$(wc -l drop.sorted | awk '{print $1}')
-	total=$(wc -l /etc/snort/updaterules.exclude.sids.txt | awk '{print $1}')
+	total=$(wc -l /etc/snort/rules/exclude.rules | awk '{print $1}')
 	pattern=0
-	for sid in $(cat /etc/snort/updaterules.exclude.sids.txt)
+	for sid in $(cat /etc/snort/rules/exclude.rules)
 	do
 		if [ "$sid" -eq "$sid" ] 2>/dev/null
 		then # it's an integer sid
-			printf "\rRemoving rules that can cause web site issues: checking sid %3d of %s" "$((++pattern))" "$total";
+			percent=$((++pattern*100/total))
+			printf "\rExcluding rules that can cause web site issues: %3d%%" $percent;
 			sed -i "/sid:$sid/s/^/#/" drop.sorted
 		fi
 	done
-	echo " "
+	printf "\rExcluding rules that can cause web site issues: 100%%\n";
 	final=$(wc -l drop.sorted | awk '{print $1}')
 	if [ "$final" -eq "$original" ] 2>/dev/null
 	then
-		echo "No rules removed - consider clearing old sids from /etc/snort/updaterules.exclude.sids.txt"
+		echo "No rules excluded - consider removing old sids from /etc/snort/rules/exclude.rules"
 	else
 		removed=$((final-original))
 		echo "$removed rules removed"
 	fi
 fi
 
-echo "Removing blank lines"
-sed -i 's/\r//g' drop.sorted # carriage return characters
-awk 'NF' drop.sorted > snort.rules
+# Remove carriage return characters and blank lines
+tr -d '\r' < drop.sorted | awk 'NF' > snort.rules
 
 # Cleanup working files
 echo "Cleaning up working files"
@@ -184,12 +187,13 @@ rm -f ip.list alert.* duplicate.* drop.*
 # Update IP blacklists ---------------------------------
 echo " "
 echo "Updating IP blacklists"
-echo "-------- -----------------------------------------" >> counts.log
+echo "-------- -----------------------------------------" >> rule_counter.log
 
 # rules/compromised-ips.txt comes from emerging-threats.tar.gz downloaded above
 if [ -f "rules/compromised-ips.txt" ]; then
 	cat rules/compromised-ips.txt >> ip.list
-	wc -l < rules/compromised-ips.txt  | awk '{print  $1,"\t", "'rules/compromised-ips.txt'" }' >> counts.log
+	count=$(wc -l rules/compromised-ips.txt | awk '{print $1}')
+	printf "%7d\t%s\n" $count "rules/compromised-ips.txt" >> rule_counter.log
 fi
 
 # Snort Community blacklist url found via https://blog.snort.org/2015/09/ip-blacklist-feed-has-moved-locations.html
@@ -197,21 +201,24 @@ fi
 download talos-ip-blacklist.txt https://talosintelligence.com/documents/ip-blacklist true  # follow url 302 redirects
 if [ -f "talos-ip-blacklist.txt" ]; then
 	cat talos-ip-blacklist.txt >> ip.list
-	wc -l < talos-ip-blacklist.txt  | awk '{print  $1,"\t", "'talos-ip-blacklist.txt'" }' >> counts.log
+	count=$(wc -l talos-ip-blacklist.txt | awk '{print $1}')
+	printf "%7d\t%s\n" $count "talos-ip-blacklist.txt" >> rule_counter.log
 fi
 
 # Output unique IPs from our downloaded blacklist(s) to L2.blacklist
 awk '!seen[$0]++' ip.list > L2.blacklist
 
-# Update counts.log with final results
-echo "-------- -----------------------------------------"       >> counts.log
-wc -l < snort.rules  | awk '{print  $1,"\t", "'snort.rules'" }' >> counts.log
-wc -l < L2.blacklist | awk '{print  $1,"\t", "'L2.blacklist'"}' >> counts.log
-echo \ >> counts.log
+# Update rule_counter.log with final results
+echo "-------- -----------------------------------------" >> rule_counter.log
+count=$(wc -l snort.rules | awk '{print $1}')
+printf "%7d\t%s\n" $count "snort.rules" >> rule_counter.log
+count=$(wc -l L2.blacklist | awk '{print $1}')
+printf "%7d\t%s\n" $count "L2.blacklist" >> rule_counter.log
+echo \ >> rule_counter.log
 echo " "
-echo "Displaying counts.log"
+echo "Displaying rule_counter.log"
 echo " "
-cat counts.log
+cat rule_counter.log
 
 # Replace snort files and restart ----------------------
 if [ -s "snort.rules" ]; then
@@ -228,6 +235,7 @@ if [ -s "L2.blacklist" ]; then
 else
 	echo "No IP blacklists downloaded"
 fi
+cp -f rule_counter.log /var/log/snort/rule_counter.log
 
 echo "Restarting SNORT service"
 # service snort restart
