@@ -384,7 +384,7 @@ end
 
 	--------------------- Exclude Rules Tab ------------------------
 
-	config_file8 = s:taboption("tab_rules", TextValue, "excludeRules", translate("<p>Some rules can cause issues with applications or websites that your require access to</p><p>You can exclude these if you identify their <abbr title=\"Snort Intrusion Detection\">sid</abbr> number</p><p><a href='https://snort.org/documents#OfficialDocumentation' target='_blank'>Read more</a></p>"))
+	config_file8 = s:taboption("tab_rules", TextValue, "excludeRules", translate("<p>Some rules can cause issues with certain apps or websites</p><p>You can exclude these rules if you identify their <abbr title=\"Snort Intrusion Detection\">sid</abbr> numbers</p><p><a href='https://snort.org/documents#OfficialDocumentation' target='_blank'>Read more</a></p>"))
    config_file8.wrap = "off"
 	config_file8.rows = 25
 	config_file8.rmempty = false
