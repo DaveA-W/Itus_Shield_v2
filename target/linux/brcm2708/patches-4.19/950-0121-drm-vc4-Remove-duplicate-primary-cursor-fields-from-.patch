@@ -1,7 +1,7 @@
-From 9c3d03b62cec67df4f3c989a2eceb38c1415fa71 Mon Sep 17 00:00:00 2001
+From 987e5c40893f587ed8654f0cc83a399d6bf3c47d Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Mon, 5 Feb 2018 18:22:03 +0000
-Subject: [PATCH 121/725] drm/vc4: Remove duplicate primary/cursor fields from
+Subject: [PATCH 121/782] drm/vc4: Remove duplicate primary/cursor fields from
  FKMS driver.
 
 The CRTC has those fields and we can just use them.

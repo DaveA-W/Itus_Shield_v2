@@ -59,7 +59,8 @@ ath79_setup_interfaces()
 	avm,fritz4020|\
 	pcs,cr3000|\
 	tplink,archer-c58-v1|\
-	tplink,archer-c59-v1)
+	tplink,archer-c59-v1|\
+	tplink,archer-c59-v2)
 		ucidef_set_interface_wan "eth1"
 		ucidef_add_switch "switch0" \
 			"0@eth0" "1:lan:1" "2:lan:4" "3:lan:3" "4:lan:2"
@@ -83,6 +84,7 @@ ath79_setup_interfaces()
 	tplink,archer-c25-v1|\
 	tplink,tl-mr3220-v1|\
 	tplink,tl-mr3420-v1|\
+	tplink,tl-wdr3500-v1|\
 	tplink,tl-wr841-v7|\
 	tplink,tl-wr841-v9|\
 	tplink,tl-wr841-v10|\
@@ -155,6 +157,11 @@ ath79_setup_interfaces()
 		;;
 	etactica,eg200)
 		ucidef_set_interface_lan "eth0" "dhcp"
+		;;
+	glinet,gl-ar750)
+		ucidef_set_interface_wan "eth1"
+		ucidef_add_switch "switch0" \
+			"0@eth0" "1:lan" "2:lan"
 		;;
 	glinet,gl-ar750s)
 		ucidef_add_switch "switch0" \
