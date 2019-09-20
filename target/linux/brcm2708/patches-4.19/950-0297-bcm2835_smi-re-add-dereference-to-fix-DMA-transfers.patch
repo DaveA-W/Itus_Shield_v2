@@ -1,7 +1,7 @@
-From 4e11b14186707dfb88be344f227737eaf8adc608 Mon Sep 17 00:00:00 2001
+From 39a22e5cd910af9599bcd2a9e4afebbe98196cab Mon Sep 17 00:00:00 2001
 From: Ezekiel Bethel <zek@9net.org>
 Date: Wed, 12 Dec 2018 19:11:13 +0000
-Subject: [PATCH 297/725] bcm2835_smi: re-add dereference to fix DMA transfers
+Subject: [PATCH 297/782] bcm2835_smi: re-add dereference to fix DMA transfers
 
 ---
  drivers/misc/bcm2835_smi.c | 2 +-
